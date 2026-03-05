@@ -1,0 +1,21 @@
+{
+  "accounts": {
+    "sample_account": {
+      "owner": "system",
+      "lamports": 1000000,
+      "data_len": 0,
+      "is_writable": true
+    }
+  },
+  "tests": {
+    "test_add": {
+      "parameters": [
+        10,
+        20
+      ],
+      "expected": {
+        "success": true
+      }
+    }
+  }
+}
