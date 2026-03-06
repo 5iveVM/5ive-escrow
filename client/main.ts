@@ -1,199 +1,501 @@
 import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { homedir } from 'os';
+import { join } from 'path';
+import { inspect } from 'util';
 import {
   Connection,
   Keypair,
   PublicKey,
+  SystemProgram,
   Transaction,
   TransactionInstruction,
-  sendAndConfirmTransaction
+  type ConfirmOptions,
 } from '@solana/web3.js';
+import {
+  ACCOUNT_SIZE,
+  TOKEN_PROGRAM_ID,
+  createInitializeAccountInstruction,
+  createMint,
+  getAccount,
+  getMinimumBalanceForRentExemptAccount,
+  getOrCreateAssociatedTokenAccount,
+  mintTo,
+} from '@solana/spl-token';
 import { FiveProgram, FiveSDK } from '@5ive-tech/sdk';
 
-type AbiParameter = {
+type StepResult = {
   name: string;
-  is_account?: boolean;
-  param_type?: string;
-  type?: string;
+  signature: string | null;
+  computeUnits: number | null;
+  ok: boolean;
+  err: string | null;
 };
 
-const RPC_URL = process.env.FIVE_RPC_URL;
-const FIVE_VM_PROGRAM_ID = process.env.FIVE_VM_PROGRAM_ID;
-const SCRIPT_ACCOUNT_ENV = process.env.FIVE_SCRIPT_ACCOUNT;
-const SCRIPT_ACCOUNT_FILE = join(process.cwd(), 'script-account.json');
-const FALLBACK_PAYER_FILE = join(process.cwd(), 'payer.json');
-const ACCOUNT_OVERRIDES: Record<string, Record<string, string>> = {
-  // TODO: Provide real account addresses before running this client.
-  // init_counter: {
-  //   counter: 'REAL_COUNTER_PUBKEY',
-  //   authority: 'REAL_AUTHORITY_PUBKEY'
-  // }
+const NETWORK = process.env.FIVE_NETWORK || 'localnet';
+const RPC_URL =
+  process.env.FIVE_RPC_URL ||
+  (NETWORK === 'devnet' ? 'https://api.devnet.solana.com' : 'http://127.0.0.1:8899');
+const FIVE_VM_PROGRAM_ID =
+  process.env.FIVE_VM_PROGRAM_ID ||
+  process.env.FIVE_PROGRAM_ID ||
+  (NETWORK === 'devnet'
+    ? '4Qxf3pbCse2veUgZVMiAm3nWqJrYo2pT4suxHKMJdK1d'
+    : 'FmzLpEQryX1UDtNjDBPx9GDsXiThFtzjsZXtTLNLU7Vb');
+const EXISTING_SCRIPT_ACCOUNT = process.env.FIVE_SCRIPT_ACCOUNT || '';
+const CONFIRM: ConfirmOptions = {
+  commitment: 'confirmed',
+  preflightCommitment: 'confirmed',
+  skipPreflight: true,
 };
 
-function normalizePath(path: string): string {
-  if (path.startsWith('~/')) {
-    return join(homedir(), path.slice(2));
+function parseConsumedUnits(logs: string[] | null | undefined): number | null {
+  if (!logs) return null;
+  for (const line of logs) {
+    const m = line.match(/consumed (\d+) of/);
+    if (m) return Number(m[1]);
   }
-  return path;
+  return null;
+}
+
+function printableError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message && err.message.length > 0) return err.message;
+    return err.stack || `${err.name}: <empty message>`;
+  }
+  try {
+    const json = JSON.stringify(err);
+    if (json && json !== '{}') return json;
+  } catch {
+    // ignore
+  }
+  return inspect(err, { depth: 5, breakLength: 120 });
 }
 
 async function loadPayer(): Promise<Keypair> {
-  const defaultPath = normalizePath('~/.config/solana/id.json');
-  try {
-    const secret = JSON.parse(await readFile(defaultPath, 'utf8')) as number[];
-    return Keypair.fromSecretKey(new Uint8Array(secret));
-  } catch {
-    try {
-      const secret = JSON.parse(await readFile(FALLBACK_PAYER_FILE, 'utf8')) as number[];
-      return Keypair.fromSecretKey(new Uint8Array(secret));
-    } catch {
-      const generated = Keypair.generate();
-      const { writeFile } = await import('fs/promises');
-      await writeFile(FALLBACK_PAYER_FILE, JSON.stringify(Array.from(generated.secretKey), null, 2) + '\n');
-      return generated;
-    }
-  }
+  const path = process.env.SOLANA_KEYPAIR_PATH || join(homedir(), '.config/solana/id.json');
+  const secret = JSON.parse(await readFile(path, 'utf8')) as number[];
+  return Keypair.fromSecretKey(new Uint8Array(secret));
 }
 
-function requireEnv(name: string, value: string | undefined): string {
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable: ${name}. Set it before running this scaffold.`
-    );
-  }
-  return value;
-}
-
-async function loadScriptAccount(): Promise<string> {
-  if (SCRIPT_ACCOUNT_ENV) return SCRIPT_ACCOUNT_ENV;
-  try {
-    const saved = JSON.parse(await readFile(SCRIPT_ACCOUNT_FILE, 'utf8')) as { pubkey?: string };
-    if (saved.pubkey) return saved.pubkey;
-  } catch {
-    // fall through to explicit error below
-  }
-  throw new Error(
-    'Missing script account. Set FIVE_SCRIPT_ACCOUNT or provide script-account.json with an existing pubkey.'
-  );
-}
-
-function getAccountOverrides(functionName: string): Record<string, string> {
-  return ACCOUNT_OVERRIDES[functionName] || ACCOUNT_OVERRIDES['*'] || {};
-}
-
-function parseComputeUnitsFromLogs(logs: string[] | null | undefined): number | undefined {
-  if (!logs) return undefined;
-  for (const line of logs) {
-    const match = line.match(/consumed\s+(\d+)\s+of/i);
-    if (match) return Number(match[1]);
-  }
-  return undefined;
-}
-
-function defaultValueForType(typeName: string | undefined): any {
-  const normalized = (typeName || 'unknown').toLowerCase();
-  throw new Error(
-    `No safe default for parameter type "${normalized}". Update the generated client to provide real args.`
-  );
-}
-
-async function run(): Promise<void> {
-  const artifactPath = join(process.cwd(), '..', 'build', 'main.five');
-  const artifactText = await readFile(artifactPath, 'utf8');
-  const { abi } = await FiveSDK.loadFiveFile(artifactText);
-
-  const rpcUrl = requireEnv('FIVE_RPC_URL', RPC_URL);
-  const fiveVmProgramId = requireEnv('FIVE_VM_PROGRAM_ID', FIVE_VM_PROGRAM_ID);
-  const connection = new Connection(rpcUrl, 'confirmed');
-  const payer = await loadPayer();
-  const scriptAccount = await loadScriptAccount();
-  const program = FiveProgram.fromABI(scriptAccount, abi, {
-    fiveVMProgramId
-  });
-
-  const preferred = ["init_counter","get_value"] as string[];
-  const available = program.getFunctions();
-  const targets = preferred.filter((name) => available.includes(name));
-  if (targets.length === 0 && available.length > 0) {
-    targets.push(available[0]);
-  }
-
-  if (targets.length === 0) {
-    throw new Error('No functions found in ABI. Run npm run build first.');
-  }
-
-  console.log('[client] Loaded ABI from ../build/main.five');
-  console.log('[client] RPC:', rpcUrl);
-  console.log('[client] Payer:', payer.publicKey.toBase58());
-  console.log('[client] Script account:', scriptAccount);
-  console.log('[client] Five VM program id:', program.getFiveVMProgramId());
-  console.log('[client] Mode: on-chain');
-  console.log('[client] Target functions:', targets.join(', '));
-
-  for (const functionName of targets) {
-    const functionDef: any = program.getFunction(functionName);
-    const params: AbiParameter[] = functionDef?.parameters || [];
-    const accountArgs: Record<string, string> = getAccountOverrides(functionName);
-    const dataArgs: Record<string, any> = {};
-
-    for (const param of params) {
-      if (param.is_account && !accountArgs[param.name]) {
-        const attributes = (param as any).attributes || [];
-        if (Array.isArray(attributes) && attributes.includes('signer')) {
-          accountArgs[param.name] = payer.publicKey.toBase58();
-        } else {
-          throw new Error(
-            `Missing required account override for "${functionName}.${param.name}". Provide a real pubkey in ACCOUNT_OVERRIDES.`
-          );
-        }
-      } else {
-        dataArgs[param.name] = defaultValueForType(param.param_type || param.type);
-      }
-    }
-
-    let builder = program.function(functionName);
-    if (Object.keys(accountArgs).length > 0) {
-      builder = builder.accounts(accountArgs);
-    }
-    if (Object.keys(dataArgs).length > 0) {
-      builder = builder.args(dataArgs);
-    }
-
-    const instruction = await builder.instruction();
-    console.log('\n[client] function:', functionName);
-    console.log('[client] instruction bytes:', Buffer.from(instruction.data, 'base64').length);
-    console.log('[client] account metas:', instruction.keys.length);
-
-    const txIx = new TransactionInstruction({
-      programId: new PublicKey(instruction.programId),
-      keys: instruction.keys.map((k) => ({
+async function sendIx(
+  connection: Connection,
+  payer: Keypair,
+  encoded: any,
+  signers: Keypair[],
+  name: string
+): Promise<StepResult> {
+  const tx = new Transaction().add(
+    new TransactionInstruction({
+      programId: new PublicKey(encoded.programId),
+      keys: encoded.keys.map((k: any) => ({
         pubkey: new PublicKey(k.pubkey),
         isSigner: k.isSigner,
-        isWritable: k.isWritable
+        isWritable: k.isWritable,
       })),
-      data: Buffer.from(instruction.data, 'base64')
-    });
-    const tx = new Transaction().add(txIx);
-    const signature = await sendAndConfirmTransaction(connection, tx, [payer], { commitment: 'confirmed' });
-    const txDetails = await connection.getTransaction(signature, {
-      commitment: 'confirmed',
-      maxSupportedTransactionVersion: 0
-    });
-    const metaErr = txDetails?.meta?.err ?? null;
-    const computeUnits =
-      txDetails?.meta?.computeUnitsConsumed ?? parseComputeUnitsFromLogs(txDetails?.meta?.logMessages);
+      data: Buffer.from(encoded.data, 'base64'),
+    })
+  );
+  tx.feePayer = payer.publicKey;
 
-    console.log('[client] signature:', signature);
-    console.log('[client] meta.err:', metaErr);
-    console.log('[client] compute units:', computeUnits ?? 'n/a');
-    if (metaErr !== null) {
-      throw new Error('on-chain execution failed');
-    }
+  const allSignersMap = new Map<string, Keypair>();
+  allSignersMap.set(payer.publicKey.toBase58(), payer);
+  for (const signer of signers) {
+    allSignersMap.set(signer.publicKey.toBase58(), signer);
+  }
+
+  const requiredSignerSet = new Set(
+    encoded.keys.filter((k: any) => k.isSigner).map((k: any) => k.pubkey)
+  );
+  const neededSigners = Array.from(allSignersMap.values()).filter(
+    (kp) => kp.publicKey.equals(payer.publicKey) || requiredSignerSet.has(kp.publicKey.toBase58())
+  );
+
+  try {
+    const signature = await connection.sendTransaction(tx, neededSigners, CONFIRM);
+    const latest = await connection.getLatestBlockhash('confirmed');
+    await connection.confirmTransaction({ signature, ...latest }, 'confirmed');
+    const txMeta = await connection.getTransaction(signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
+    const metaErr = txMeta?.meta?.err ?? null;
+    const cu = txMeta?.meta?.computeUnitsConsumed ?? parseConsumedUnits(txMeta?.meta?.logMessages);
+    return {
+      name,
+      signature,
+      computeUnits: cu,
+      ok: metaErr == null,
+      err: metaErr == null ? null : JSON.stringify(metaErr),
+    };
+  } catch (err) {
+    return {
+      name,
+      signature: null,
+      computeUnits: null,
+      ok: false,
+      err: printableError(err),
+    };
   }
 }
 
-run().catch((error) => {
-  console.error('[client] failed:', error instanceof Error ? error.message : String(error));
+async function expectFailure(run: () => Promise<StepResult>): Promise<StepResult> {
+  const result = await run();
+  if (result.ok) return { ...result, ok: false, err: 'unexpected success' };
+  return { ...result, ok: true, err: 'expected failure' };
+}
+
+async function sendSystemTx(
+  connection: Connection,
+  payer: Keypair,
+  ix: TransactionInstruction,
+  signers: Keypair[],
+  name: string
+): Promise<StepResult> {
+  try {
+    const tx = new Transaction().add(ix);
+    const signature = await connection.sendTransaction(tx, [payer, ...signers], CONFIRM);
+    await connection.confirmTransaction(signature, 'confirmed');
+    const meta = await connection.getTransaction(signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
+    return {
+      name,
+      signature,
+      computeUnits: meta?.meta?.computeUnitsConsumed ?? parseConsumedUnits(meta?.meta?.logMessages),
+      ok: meta?.meta?.err == null,
+      err: meta?.meta?.err ? JSON.stringify(meta.meta.err) : null,
+    };
+  } catch (err) {
+    return {
+      name,
+      signature: null,
+      computeUnits: null,
+      ok: false,
+      err: printableError(err),
+    };
+  }
+}
+
+async function createOwnedAccount(
+  connection: Connection,
+  payer: Keypair,
+  account: Keypair,
+  owner: PublicKey,
+  space: number
+): Promise<StepResult> {
+  const lamports = await connection.getMinimumBalanceForRentExemption(space);
+  return sendSystemTx(
+    connection,
+    payer,
+    SystemProgram.createAccount({
+      fromPubkey: payer.publicKey,
+      newAccountPubkey: account.publicKey,
+      lamports,
+      space,
+      programId: owner,
+    }),
+    [account],
+    `setup:create_owned:${account.publicKey.toBase58()}`
+  );
+}
+
+async function createTokenVault(
+  connection: Connection,
+  payer: Keypair,
+  mint: PublicKey,
+  owner: PublicKey
+): Promise<Keypair> {
+  const vault = Keypair.generate();
+  const lamports = await getMinimumBalanceForRentExemptAccount(connection);
+  const tx = new Transaction().add(
+    SystemProgram.createAccount({
+      fromPubkey: payer.publicKey,
+      newAccountPubkey: vault.publicKey,
+      space: ACCOUNT_SIZE,
+      lamports,
+      programId: TOKEN_PROGRAM_ID,
+    }),
+    createInitializeAccountInstruction(vault.publicKey, mint, owner, TOKEN_PROGRAM_ID)
+  );
+  const signature = await connection.sendTransaction(tx, [payer, vault], CONFIRM);
+  const latest = await connection.getLatestBlockhash('confirmed');
+  await connection.confirmTransaction({ signature, ...latest }, 'confirmed');
+  return vault;
+}
+
+async function deployScript(connection: Connection, payer: Keypair, loaded: any) {
+  let result: any = await FiveSDK.deployToSolana(loaded.bytecode, connection, payer, {
+    fiveVMProgramId: FIVE_VM_PROGRAM_ID,
+  });
+
+  if (!result.success && String(result.error || '').toLowerCase().includes('transaction too large')) {
+    result = await FiveSDK.deployLargeProgramToSolana(loaded.bytecode, connection, payer, {
+      fiveVMProgramId: FIVE_VM_PROGRAM_ID,
+    });
+  }
+
+  const scriptAccount = result.scriptAccount || result.programId;
+  if (!result.success || !scriptAccount) {
+    throw new Error(`deploy failed: ${result.error || 'unknown error'}`);
+  }
+
+  return {
+    scriptAccount,
+    signature: result.transactionId || null,
+    deploymentCost: result.deploymentCost || null,
+  };
+}
+
+function pad(name: string): string {
+  return name.padEnd(36, ' ');
+}
+
+async function assertTokenDelta(
+  connection: Connection,
+  account: PublicKey,
+  before: bigint,
+  expectedDelta: bigint,
+  name: string
+) {
+  const after = (await getAccount(connection, account, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+  if (after - before !== expectedDelta) {
+    throw new Error(`${name} token delta mismatch: expected ${expectedDelta}, got ${after - before}`);
+  }
+}
+
+async function main() {
+  const connection = new Connection(RPC_URL, 'confirmed');
+  const payer = await loadPayer();
+
+  const artifactCandidates = [
+    join(process.cwd(), '..', 'build', 'main.five'),
+    join(process.cwd(), '..', 'build', '5ive-escrow.five'),
+  ];
+  let artifactText = '';
+  let artifactPath = '';
+  for (const candidate of artifactCandidates) {
+    try {
+      artifactText = await readFile(candidate, 'utf8');
+      artifactPath = candidate;
+      break;
+    } catch {
+      continue;
+    }
+  }
+  if (!artifactText) {
+    throw new Error(`missing build artifact: ${artifactCandidates.join(', ')}`);
+  }
+
+  const loaded = await FiveSDK.loadFiveFile(artifactText);
+  const deploy = EXISTING_SCRIPT_ACCOUNT
+    ? { scriptAccount: EXISTING_SCRIPT_ACCOUNT, signature: null, deploymentCost: 0 }
+    : await deployScript(connection, payer, loaded);
+  const program = FiveProgram.fromABI(deploy.scriptAccount, loaded.abi, {
+    fiveVMProgramId: FIVE_VM_PROGRAM_ID,
+  });
+
+  const setup: StepResult[] = [];
+  const report: StepResult[] = [];
+  const vmProgramPk = new PublicKey(FIVE_VM_PROGRAM_ID);
+
+  const depositAmount = 1_000_000n;
+  const receiveAmount = 1_500_000n;
+  const seed = Math.floor(Date.now() / 1000);
+  const decimals = 6;
+
+  const maker = Keypair.generate();
+  const taker = Keypair.generate();
+  setup.push(await sendSystemTx(connection, payer, SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: maker.publicKey, lamports: 30_000_000 }), [], 'setup:fund_maker'));
+  setup.push(await sendSystemTx(connection, payer, SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: taker.publicKey, lamports: 30_000_000 }), [], 'setup:fund_taker'));
+
+  const mintA = await createMint(connection, payer, maker.publicKey, null, decimals);
+  const mintB = await createMint(connection, payer, taker.publicKey, null, decimals);
+
+  const makerAtaA = await getOrCreateAssociatedTokenAccount(connection, payer, mintA, maker.publicKey);
+  const makerAtaB = await getOrCreateAssociatedTokenAccount(connection, payer, mintB, maker.publicKey);
+  const takerAtaA = await getOrCreateAssociatedTokenAccount(connection, payer, mintA, taker.publicKey);
+  const takerAtaB = await getOrCreateAssociatedTokenAccount(connection, payer, mintB, taker.publicKey);
+
+  await mintTo(connection, payer, mintA, makerAtaA.address, maker, 10_000_000);
+  await mintTo(connection, payer, mintB, takerAtaB.address, taker, 10_000_000);
+
+  const escrow = Keypair.generate();
+  setup.push(await createOwnedAccount(connection, payer, escrow, vmProgramPk, 256));
+  const vault = await createTokenVault(connection, payer, mintA, escrow.publicKey);
+
+  const makerAtaABefore = (await getAccount(connection, makerAtaA.address, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+  const vaultBefore = (await getAccount(connection, vault.publicKey, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+
+  const makeIx = await program
+    .function('make')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      maker: maker.publicKey.toBase58(),
+      maker_ata_a: makerAtaA.address.toBase58(),
+      maker_ata_b: makerAtaB.address.toBase58(),
+      vault: vault.publicKey.toBase58(),
+      escrow: escrow.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({ taker: taker.publicKey.toBase58(), seed, deposit_amount: Number(depositAmount), receive_amount: Number(receiveAmount) })
+    .instruction();
+  report.push(await sendIx(connection, payer, makeIx, [maker], 'make:happy'));
+
+  if (report[report.length - 1].ok) {
+    await assertTokenDelta(connection, makerAtaA.address, makerAtaABefore, -depositAmount, 'make:maker_ata_a');
+    await assertTokenDelta(connection, vault.publicKey, vaultBefore, depositAmount, 'make:vault');
+  }
+
+  const takerAtaABefore = (await getAccount(connection, takerAtaA.address, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+  const takerAtaBBefore = (await getAccount(connection, takerAtaB.address, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+  const makerAtaBBefore = (await getAccount(connection, makerAtaB.address, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+
+  const takeIx = await program
+    .function('take')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      taker: taker.publicKey.toBase58(),
+      maker: maker.publicKey.toBase58(),
+      taker_ata_a: takerAtaA.address.toBase58(),
+      taker_ata_b: takerAtaB.address.toBase58(),
+      maker_ata_b: makerAtaB.address.toBase58(),
+      vault: vault.publicKey.toBase58(),
+      escrow: escrow.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({})
+    .instruction();
+  report.push(await sendIx(connection, payer, takeIx, [taker, escrow], 'take:happy'));
+
+  if (report[report.length - 1].ok) {
+    await assertTokenDelta(connection, takerAtaA.address, takerAtaABefore, depositAmount, 'take:taker_ata_a');
+    await assertTokenDelta(connection, takerAtaB.address, takerAtaBBefore, -receiveAmount, 'take:taker_ata_b');
+    await assertTokenDelta(connection, makerAtaB.address, makerAtaBBefore, receiveAmount, 'take:maker_ata_b');
+  }
+
+  report.push(await expectFailure(async () => sendIx(connection, payer, takeIx, [taker, escrow], 'take:double_settlement_fails')));
+
+  const refundAfterTakeIx = await program
+    .function('refund')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      maker: maker.publicKey.toBase58(),
+      maker_ata_a: makerAtaA.address.toBase58(),
+      vault: vault.publicKey.toBase58(),
+      escrow: escrow.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({})
+    .instruction();
+  report.push(await expectFailure(async () => sendIx(connection, payer, refundAfterTakeIx, [maker, escrow], 'refund:after_take_fails')));
+
+  const maker2 = Keypair.generate();
+  const taker2 = Keypair.generate();
+  setup.push(await sendSystemTx(connection, payer, SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: maker2.publicKey, lamports: 30_000_000 }), [], 'setup:fund_maker_2'));
+  setup.push(await sendSystemTx(connection, payer, SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: taker2.publicKey, lamports: 30_000_000 }), [], 'setup:fund_taker_2'));
+
+  const maker2AtaA = await getOrCreateAssociatedTokenAccount(connection, payer, mintA, maker2.publicKey);
+  const maker2AtaB = await getOrCreateAssociatedTokenAccount(connection, payer, mintB, maker2.publicKey);
+  const taker2AtaA = await getOrCreateAssociatedTokenAccount(connection, payer, mintA, taker2.publicKey);
+  const taker2AtaB = await getOrCreateAssociatedTokenAccount(connection, payer, mintB, taker2.publicKey);
+
+  await mintTo(connection, payer, mintA, maker2AtaA.address, maker, 10_000_000);
+  await mintTo(connection, payer, mintB, taker2AtaB.address, taker, 10_000_000);
+
+  const escrow2 = Keypair.generate();
+  setup.push(await createOwnedAccount(connection, payer, escrow2, vmProgramPk, 256));
+  const vault2 = await createTokenVault(connection, payer, mintA, escrow2.publicKey);
+
+  const make2Ix = await program
+    .function('make')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      maker: maker2.publicKey.toBase58(),
+      maker_ata_a: maker2AtaA.address.toBase58(),
+      maker_ata_b: maker2AtaB.address.toBase58(),
+      vault: vault2.publicKey.toBase58(),
+      escrow: escrow2.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({ taker: taker2.publicKey.toBase58(), seed: seed + 1, deposit_amount: Number(depositAmount), receive_amount: Number(receiveAmount) })
+    .instruction();
+  report.push(await sendIx(connection, payer, make2Ix, [maker2], 'make:refund_flow'));
+
+  const badRefundIx = await program
+    .function('refund')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      maker: taker2.publicKey.toBase58(),
+      maker_ata_a: taker2AtaA.address.toBase58(),
+      vault: vault2.publicKey.toBase58(),
+      escrow: escrow2.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({})
+    .instruction();
+  report.push(await expectFailure(async () => sendIx(connection, payer, badRefundIx, [taker2, escrow2], 'refund:wrong_signer_fails')));
+
+  const wrongVault = await createTokenVault(connection, payer, mintA, escrow2.publicKey);
+  const badTakeIx = await program
+    .function('take')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      taker: taker2.publicKey.toBase58(),
+      maker: maker2.publicKey.toBase58(),
+      taker_ata_a: taker2AtaA.address.toBase58(),
+      taker_ata_b: taker2AtaB.address.toBase58(),
+      maker_ata_b: maker2AtaB.address.toBase58(),
+      vault: wrongVault.publicKey.toBase58(),
+      escrow: escrow2.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({})
+    .instruction();
+  report.push(await expectFailure(async () => sendIx(connection, payer, badTakeIx, [taker2, escrow2], 'take:wrong_vault_fails')));
+
+  const maker2AtaABefore = (await getAccount(connection, maker2AtaA.address, 'confirmed', TOKEN_PROGRAM_ID)).amount;
+  const refundIx = await program
+    .function('refund')
+    .payer(payer.publicKey.toBase58())
+    .accounts({
+      maker: maker2.publicKey.toBase58(),
+      maker_ata_a: maker2AtaA.address.toBase58(),
+      vault: vault2.publicKey.toBase58(),
+      escrow: escrow2.publicKey.toBase58(),
+      token_program: TOKEN_PROGRAM_ID.toBase58(),
+    })
+    .args({})
+    .instruction();
+  report.push(await sendIx(connection, payer, refundIx, [maker2, escrow2], 'refund:happy'));
+
+  if (report[report.length - 1].ok) {
+    await assertTokenDelta(connection, maker2AtaA.address, maker2AtaABefore, depositAmount, 'refund:maker_ata_a');
+  }
+
+  report.push(await expectFailure(async () => sendIx(connection, payer, refundIx, [maker2, escrow2], 'refund:double_settlement_fails')));
+
+  console.log(`--- 5ive-escrow ${NETWORK} report ---`);
+  console.log('artifact:', artifactPath);
+  console.log('network:', NETWORK);
+  console.log('rpc:', RPC_URL);
+  console.log('five_vm_program_id:', FIVE_VM_PROGRAM_ID);
+  console.log('script_account:', deploy.scriptAccount);
+  console.log('deploy_signature:', deploy.signature);
+  console.log('deployment_cost_lamports:', deploy.deploymentCost);
+
+  for (const item of report) {
+    console.log(
+      `${pad(item.name)} | ok=${item.ok} | sig=${item.signature ?? 'n/a'} | cu=${item.computeUnits ?? 'n/a'} | err=${item.err ?? 'none'}`
+    );
+  }
+
+  const failedSetup = setup.filter((r) => !r.ok);
+  const failed = report.filter((r) => !r.ok);
+  if (failedSetup.length > 0 || failed.length > 0) process.exitCode = 1;
+}
+
+main().catch((err) => {
+  console.error('run failed:', printableError(err));
   process.exit(1);
 });

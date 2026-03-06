@@ -1,18 +1,25 @@
 {
-  "name": "5ive-escrow-2026",
+  "name": "5ive-escrow",
   "version": "0.1.0",
   "description": "A 5IVE VM project",
   "author": "",
   "license": "MIT",
   "scripts": {
-    "build": "5ive build",
-    "test": "5ive test",
-    "deploy": "5ive deploy",
-    "build:release": "5ive build -O 3",
-    "build:debug": "5ive build --debug",
-    "watch": "5ive build --watch",
+    "build": "node ../five-cli/dist/index.js build --project .",
+    "test": "node ../five-cli/dist/index.js test",
+    "test:onchain:local": "node ../five-cli/dist/index.js test --on-chain --target local",
+    "test:onchain:devnet": "node ../five-cli/dist/index.js test --on-chain --target devnet",
+    "deploy:local": "node ../five-cli/dist/index.js deploy build/*.five --project . --target local",
+    "deploy:devnet": "node ../five-cli/dist/index.js deploy build/*.five --project . --target devnet",
+    "deploy": "node ../five-cli/dist/index.js deploy build/*.five --project .",
+    "build:release": "node ../five-cli/dist/index.js compile src/**/*.v -O 3",
+    "build:debug": "node ../five-cli/dist/index.js compile src/**/*.v --debug",
+    "watch": "node ../five-cli/dist/index.js compile src/**/*.v --watch",
     "client:build": "npm --prefix client install && npm --prefix client run build",
-    "client:run": "npm --prefix client install && npm --prefix client run run"
+    "client:run": "npm --prefix client install && npm --prefix client run run",
+    "client:run:local": "FIVE_NETWORK=localnet npm run client:run",
+    "client:run:devnet": "FIVE_NETWORK=devnet npm run client:run",
+    "verify": "npm run build && npm run test && npm run test:onchain:local && npm run client:run:local"
   },
   "devDependencies": {
     "@5ive-tech/cli": "^1.0.0"

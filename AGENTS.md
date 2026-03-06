@@ -3,6 +3,15 @@
 This file is the complete minimum contract for building and locally validating a 5IVE project.
 Use `./AGENTS_CHECKLIST.md` and `./AGENTS_REFERENCE.md` only as optional supplements for deeper failure triage, extended syntax examples, and client/debug details.
 
+## 0) Policy Overrides (2026-03)
+
+These rules override any older examples:
+1. Typed account metadata access uses `acct.ctx.*` (for example `acct.ctx.key`), not `acct.key`.
+2. Account serializer keywords are `raw`, `borsh`, `bincode`.
+3. Default account serializer is `raw`.
+4. Serializer precedence is parameter override > account type default > interface/program default.
+5. `anchor` is not a serializer keyword.
+
 ## 1) Mission
 
 Deliver production-ready 5IVE contracts in one focused pass when possible, with deterministic build/test verification first and deploy/execute verification when on-chain scope is requested.

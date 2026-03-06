@@ -2,7 +2,7 @@
 schema_version = 1
 
 [project]
-name = "5ive-escrow-2026"
+name = "5ive-escrow"
 version = "0.1.0"
 description = "A 5IVE VM project"
 source_dir = "src"
@@ -29,5 +29,5 @@ target_compute_units = 200000
 
 [deploy]
 # Deployment settings
-network = "devnet"
+cluster = "devnet"
 # program_id = "your-program-id"

@@ -3,6 +3,15 @@
 This reference is for agents that do not have direct access to the 5IVE monorepo internals.
 Use with `./AGENTS.md` and `./AGENTS_CHECKLIST.md`.
 
+## Policy Overrides (2026-03)
+
+These rules are authoritative and override older examples:
+1. Typed account metadata access must use `acct.ctx.*` (for example `acct.ctx.key`), not `acct.key`.
+2. Account serializer keywords are `raw`, `borsh`, `bincode`.
+3. Default account serializer is `raw`.
+4. Serializer precedence is parameter override > account type default > interface/program default.
+5. `anchor` is not a serializer keyword.
+
 ## 1) Core Surfaces
 
 1. Source language: `.v`

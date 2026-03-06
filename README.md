@@ -7,7 +7,7 @@ A basic project built with 5IVE VM.
 ### Prerequisites
 
 - Node.js 18+
-- 5IVE CLI: `npm install -g @5ive-tech/cli`
+- Local monorepo CLI build: `node ../five-cli/dist/index.js --help`
 
 ### Building
 
@@ -33,21 +33,21 @@ npm run build:debug
 npm test
 
 # Run with watch mode for continuous testing
-5ive test --watch
+node ../five-cli/dist/index.js test --watch
 
 # Run specific tests by filter
-5ive test --filter "test_add"
+node ../five-cli/dist/index.js test --filter "test_add"
 
 # Run with verbose output
-5ive test --verbose
+node ../five-cli/dist/index.js test --verbose
 
 # Run with JSON output for CI/CD
-5ive test --format json
+node ../five-cli/dist/index.js test --format json
 
 # Run on-chain tests (local/devnet/mainnet)
-5ive test --on-chain --target local
-5ive test --on-chain --target devnet
-5ive test --on-chain --target mainnet --allow-mainnet-tests --max-cost-sol 0.5
+node ../five-cli/dist/index.js test --on-chain --target local
+node ../five-cli/dist/index.js test --on-chain --target devnet
+node ../five-cli/dist/index.js test --on-chain --target mainnet --allow-mainnet-tests --max-cost-sol 0.5
 ```
 
 #### Writing Tests
@@ -76,7 +76,7 @@ For stateful on-chain tests, use companion fixture files (e.g. `tests/main.test.
 
 ### Node Client
 
-Use the generated Node starter under `client/main.ts` for devnet/mainnet execution:
+Use the generated Node starter under `client/main.ts` for localnet/devnet execution:
 
 ```bash
 # Build contract artifact first
@@ -87,7 +87,7 @@ npm run client:build
 npm run client:run
 ```
 
-The starter is self-contained (default devnet RPC, generated script-account file, payer auto-loading) and prints signature, `meta.err`, and CU.
+The starter is self-contained (default localnet RPC unless `FIVE_NETWORK=devnet`, generated script-account file optional, payer auto-loading) and prints signature, `meta.err`, and CU.
 
 ### Development
 
@@ -143,10 +143,10 @@ See `docs/STDLIB.md` for bundled stdlib module details.
 
 ### Local Development CLI Note
 
-If your globally installed `5ive` binary behaves differently from this repo source, run the local CLI directly:
+Use the local monorepo CLI directly:
 
 ```bash
-node ./five-cli/dist/index.js init my-project
+node ../five-cli/dist/index.js build --project .
 ```
 
 ## Multi-File Projects
@@ -155,8 +155,17 @@ If your project uses multiple modules with `use` or `import` statements, 5IVE CL
 
 ```bash
 # Build from five.toml entry_point using compiler-owned discovery
-5ive build
+node ../five-cli/dist/index.js build --project .
 ```
+
+## Serializer and Typed Account Policy
+
+1. Supported account serializers: `raw`, `borsh`, `bincode`.
+2. Default account serializer is `raw`.
+3. Precedence is: parameter `@serializer(...)` override > account type `@serializer(...)` > interface/program default.
+4. `anchor` is not a serializer keyword.
+5. For typed account metadata, use `acct.ctx.*` (for example `acct.ctx.key`), not `acct.key`.
+6. For external state reads, prefer namespaced account types such as `spl_token::Mint` and `spl_token::TokenAccount` with explicit `@serializer("raw")` where needed.
 
 ## Learn More
 
