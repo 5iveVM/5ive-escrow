@@ -59,7 +59,7 @@ Use the installed `5ive` CLI / bundled SDK compiler as the public validation pat
 
 1. Run:
 ```bash
-5ive build
+node ../five-cli/dist/index.js build --project .
 ```
 2. If compile fails, fix in this order:
 - missing semicolons in account fields
@@ -88,11 +88,11 @@ Use the installed `5ive` CLI / bundled SDK compiler as the public validation pat
 
 1. Run sdk/local tests:
 ```bash
-5ive test --sdk-runner
+node ../five-cli/dist/index.js test --sdk-runner
 ```
 2. Run focused tests:
 ```bash
-5ive test --filter "test_*" --verbose
+node ../five-cli/dist/index.js test --filter "test_*" --verbose
 ```
 3. Add tests for every guard path and at least one happy path per public instruction.
 4. Required negative tests:
