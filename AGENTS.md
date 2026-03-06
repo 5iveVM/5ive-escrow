@@ -58,22 +58,22 @@ For the default build-and-validate path, always run this sequence:
 - `[project].target`
 - `[deploy].program_id` (secondary for build-only work, but required later for on-chain commands)
 - `[deploy].cluster`, `[deploy].rpc_url`, and `[deploy].keypair_path` (can affect tests and on-chain flows)
-3. Build with `5ive build` as the preferred project build command.
-4. Run local tests with `5ive test --sdk-runner`.
-5. Re-run focused tests with `5ive test --filter "test_*" --verbose` when isolating failures.
+3. Build with `node ../five-cli/dist/index.js build --project .` as the preferred project build command.
+4. Run local tests with `node ../five-cli/dist/index.js test --sdk-runner`.
+5. Re-run focused tests with `node ../five-cli/dist/index.js test --filter "test_*" --verbose` when isolating failures.
 6. Treat deploy/execute as conditional and only continue when the user asks for on-chain scope.
 
 Build contract details:
-1. `5ive build` discovers `five.toml` by searching upward from the current directory, or you can pass `--project <path>`.
+1. `node ../five-cli/dist/index.js build --project .` discovers `five.toml` by searching upward from the current directory, or you can pass `--project <path>`.
 2. Project builds require `project.entry_point` in `five.toml`.
-3. Prefer `5ive build` over ad hoc compilation for real projects because project builds handle multi-file imports and module discovery.
-4. `5ive compile <file>` remains valid for direct-file compilation, but it is secondary to `5ive build` for project work.
+3. Prefer `node ../five-cli/dist/index.js build --project .` over ad hoc compilation for real projects because project builds handle multi-file imports and module discovery.
+4. `node ../five-cli/dist/index.js compile <file>` remains valid for direct-file compilation, but it is secondary to `node ../five-cli/dist/index.js build --project .` for project work.
 5. Treat `build/main.five` as the default output artifact unless project config or explicit output flags override it.
 6. The `.five` artifact is the primary output and contains bytecode plus ABI.
 7. The build process also writes project metadata under `.five/` (including the build manifest). Treat generated project artifacts as authoritative.
 
 Local test contract details:
-1. `5ive test` defaults to the project `tests/` directory when run in a project context.
+1. `node ../five-cli/dist/index.js test` defaults to the project `tests/` directory when run in a project context.
 2. Both `.v` tests and `.test.json` suites are supported.
 3. If `target`, `network`, or `keypair` are not passed explicitly, test runs may inherit defaults from `five.toml`.
 4. Use on-chain test modes only when the user explicitly requests on-chain validation.

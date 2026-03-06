@@ -184,14 +184,14 @@ Porting checklist:
 ## 6) Build and Test Commands
 
 ```bash
-5ive build
-5ive test --sdk-runner
-5ive test --filter "test_*" --verbose
+node ../five-cli/dist/index.js build --project .
+node ../five-cli/dist/index.js test --sdk-runner
+node ../five-cli/dist/index.js test --filter "test_*" --verbose
 ```
 
 Discovery behavior:
 1. test functions can be named `pub test_*`
-2. `.v` tests and `.test.json` suites are supported by `5ive test`
+2. `.v` tests and `.test.json` suites are supported by `node ../five-cli/dist/index.js test`
 3. If the globally installed CLI behaves differently from the pinned monorepo compiler/runtime, treat the monorepo toolchain as the source of truth and record the mismatch explicitly.
 
 ## 7) Security Review Minimum
