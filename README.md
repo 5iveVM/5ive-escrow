@@ -111,6 +111,7 @@ npm run deploy
 - `build/` - Compiled bytecode
 - `docs/` - Documentation
 - `five.toml` - Project configuration
+- `SCENARIOS.md` - Canonical local/on-chain run paths
 
 ## Standard Library (Bundled v1)
 

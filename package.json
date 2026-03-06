@@ -19,7 +19,9 @@
     "client:run": "npm --prefix client install && npm --prefix client run run",
     "client:run:local": "FIVE_NETWORK=localnet npm run client:run",
     "client:run:devnet": "FIVE_NETWORK=devnet npm run client:run",
-    "verify": "npm run build && npm run test && npm run test:onchain:local && npm run client:run:local"
+    "verify": "npm run build && npm run test && npm run test:onchain:local && npm run client:run:local",
+    "smoke": "npm run build && npm run test",
+    "smoke:onchain:local": "npm run build && npm run test:onchain:local"
   },
   "devDependencies": {
     "@5ive-tech/cli": "^1.0.0"
