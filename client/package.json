@@ -1,5 +1,5 @@
 {
-  "name": "5ive-escrow-2026-client",
+  "name": "5ive-escrow-client",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@5ive-tech/sdk": "^1.1.7",
+    "@solana/spl-token": "^0.4.8",
     "@solana/web3.js": "^1.98.4"
   },
   "devDependencies": {

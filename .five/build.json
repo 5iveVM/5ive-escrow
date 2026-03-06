@@ -1,0 +1,13 @@
+{
+  "artifact_path": "/Users/ivmidable/Development/five-mono/5ive-escrow-2026/build/5ive-escrow-2026.five",
+  "compiler_version": "unknown",
+  "source_files": [
+    "/Users/ivmidable/Development/five-mono/5ive-escrow-2026/src/main.v"
+  ],
+  "target": "vm",
+  "timestamp": "2026-03-05T22:04:27.714Z",
+  "hash": "bd4172b921b201de83b7bc8e311a5e1093af8509b1ecd1fa8635f8a8a842008e",
+  "format": "five",
+  "entry_point": "src/main.v",
+  "source_dir": "src"
+}

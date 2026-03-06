@@ -1,35 +1,88 @@
-// 5IVE bundled stdlib (v1, compiler-provided)
-// Canonical explicit imports:
-// use std::builtins;
-// use std::interfaces::spl_token;
-// use std::interfaces::system_program;
-// Call interface methods via module aliases:
-// spl_token::transfer(...);
-// system_program::transfer(...);
-
-// Basic 5ive DSL program (valid-first starter)
-
-account Counter {
-    value: u64;
-    authority: pubkey;
+interface SPLToken @program("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
+    transfer @discriminator(3) (
+        source: account,
+        destination: account,
+        authority: account @signer,
+        amount: u64
+    );
 }
 
-pub init_counter(
-    counter: Counter @mut,
-    authority: account @signer
+account EscrowState {
+    seed: u64;
+    maker: pubkey;
+    taker: pubkey;
+    maker_ata_b: pubkey;
+    vault: pubkey;
+    deposit_amount: u64;
+    receive_amount: u64;
+    status: u64;
+}
+
+pub make(
+    maker: account @mut @signer,
+    maker_ata_a: account @mut,
+    maker_ata_b: account,
+    vault: account @mut,
+    escrow: EscrowState @mut,
+    token_program: account,
+    taker: pubkey,
+    seed: u64,
+    deposit_amount: u64,
+    receive_amount: u64
 ) {
-    counter.value = 0;
-    counter.authority = authority.ctx.key;
+    require(deposit_amount > 0);
+    require(receive_amount > 0);
+    require(maker.ctx.key != taker);
+
+    escrow.seed = seed;
+    escrow.maker = maker.ctx.key;
+    escrow.taker = taker;
+    escrow.maker_ata_b = maker_ata_b.ctx.key;
+    escrow.vault = vault.ctx.key;
+    escrow.deposit_amount = deposit_amount;
+    escrow.receive_amount = receive_amount;
+    escrow.status = 0;
+
+    SPLToken::transfer(maker_ata_a, vault, maker, deposit_amount);
 }
 
-pub increment(
-    counter: Counter @mut,
-    authority: account @signer
+pub take(
+    taker: account @mut @signer,
+    maker: account,
+    taker_ata_a: account @mut,
+    taker_ata_b: account @mut,
+    maker_ata_b: account @mut,
+    vault: account @mut,
+    escrow: EscrowState @mut @signer,
+    token_program: account
 ) {
-    require(counter.authority == authority.ctx.key);
-    counter.value = counter.value + 1;
+    require(escrow.status == 0);
+    require(maker.ctx.key == escrow.maker);
+    require(taker.ctx.key == escrow.taker);
+    require(maker_ata_b.ctx.key == escrow.maker_ata_b);
+    require(vault.ctx.key == escrow.vault);
+
+    SPLToken::transfer(taker_ata_b, maker_ata_b, taker, escrow.receive_amount);
+    SPLToken::transfer(vault, taker_ata_a, escrow, escrow.deposit_amount);
+
+    escrow.status = 1;
 }
 
-pub get_value(counter: Counter) -> u64 {
-    return counter.value;
+pub refund(
+    maker: account @mut @signer,
+    maker_ata_a: account @mut,
+    vault: account @mut,
+    escrow: EscrowState @mut @signer,
+    token_program: account
+) {
+    require(escrow.status == 0);
+    require(maker.ctx.key == escrow.maker);
+    require(vault.ctx.key == escrow.vault);
+
+    SPLToken::transfer(vault, maker_ata_a, escrow, escrow.deposit_amount);
+    escrow.status = 2;
+}
+
+pub get_status(escrow: EscrowState) -> u64 {
+    return escrow.status;
 }
