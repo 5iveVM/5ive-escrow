@@ -32,20 +32,22 @@ type StepResult = {
 };
 
 const NETWORK = process.env.FIVE_NETWORK || 'localnet';
-const RPC_URL =
-  process.env.FIVE_RPC_URL ||
-  (NETWORK === 'devnet' ? 'https://api.devnet.solana.com' : 'http://127.0.0.1:8899');
-const FIVE_VM_PROGRAM_ID =
-  process.env.FIVE_VM_PROGRAM_ID ||
-  process.env.FIVE_PROGRAM_ID ||
-  (NETWORK === 'devnet'
-    ? '4Qxf3pbCse2veUgZVMiAm3nWqJrYo2pT4suxHKMJdK1d'
-    : 'FmzLpEQryX1UDtNjDBPx9GDsXiThFtzjsZXtTLNLU7Vb');
+const NORMALIZED_NETWORK = NETWORK === 'local' ? 'localnet' : NETWORK;
+const RPC_BY_NETWORK: Record<string, string> = {
+  localnet: 'http://127.0.0.1:8899',
+  devnet: 'https://api.devnet.solana.com',
+  mainnet: 'https://api.mainnet-beta.solana.com',
+};
+const PROGRAM_BY_NETWORK: Record<string, string> = {
+  localnet: '5ive58PJUPaTyAe7tvU1bvBi25o7oieLLTRsJDoQNJst',
+  devnet: '5ive58PJUPaTyAe7tvU1bvBi25o7oieLLTRsJDoQNJst',
+  mainnet: '5ive58PJUPaTyAe7tvU1bvBi25o7oieLLTRsJDoQNJst',
+};
 const EXISTING_SCRIPT_ACCOUNT = process.env.FIVE_SCRIPT_ACCOUNT || '';
 const CONFIRM: ConfirmOptions = {
   commitment: 'confirmed',
   preflightCommitment: 'confirmed',
-  skipPreflight: true,
+  skipPreflight: false,
 };
 
 function parseConsumedUnits(logs: string[] | null | undefined): number | null {
@@ -69,6 +71,17 @@ function printableError(err: unknown): string {
     // ignore
   }
   return inspect(err, { depth: 5, breakLength: 120 });
+}
+
+async function loadDeploymentConfig(network: string): Promise<{ rpcUrl?: string; fiveProgramId?: string }> {
+  const path = join(process.cwd(), '..', `deployment-config.${network}.json`);
+  try {
+    const raw = await readFile(path, 'utf8');
+    const parsed = JSON.parse(raw) as { rpcUrl?: string; fiveProgramId?: string };
+    return parsed;
+  } catch {
+    return {};
+  }
 }
 
 async function loadPayer(): Promise<Keypair> {
@@ -224,14 +237,14 @@ async function createTokenVault(
   return vault;
 }
 
-async function deployScript(connection: Connection, payer: Keypair, loaded: any) {
+async function deployScript(connection: Connection, payer: Keypair, loaded: any, fiveVmProgramId: string) {
   let result: any = await FiveSDK.deployToSolana(loaded.bytecode, connection, payer, {
-    fiveVMProgramId: FIVE_VM_PROGRAM_ID,
+    fiveVMProgramId: fiveVmProgramId,
   });
 
   if (!result.success && String(result.error || '').toLowerCase().includes('transaction too large')) {
     result = await FiveSDK.deployLargeProgramToSolana(loaded.bytecode, connection, payer, {
-      fiveVMProgramId: FIVE_VM_PROGRAM_ID,
+      fiveVMProgramId: fiveVmProgramId,
     });
   }
 
@@ -265,7 +278,18 @@ async function assertTokenDelta(
 }
 
 async function main() {
-  const connection = new Connection(RPC_URL, 'confirmed');
+  const deploymentConfig = await loadDeploymentConfig(NORMALIZED_NETWORK);
+  const rpcUrl =
+    process.env.FIVE_RPC_URL ||
+    deploymentConfig.rpcUrl ||
+    (RPC_BY_NETWORK[NORMALIZED_NETWORK] || RPC_BY_NETWORK.localnet);
+  const fiveVmProgramId =
+    process.env.FIVE_VM_PROGRAM_ID ||
+    process.env.FIVE_PROGRAM_ID ||
+    deploymentConfig.fiveProgramId ||
+    (PROGRAM_BY_NETWORK[NORMALIZED_NETWORK] || PROGRAM_BY_NETWORK.localnet);
+
+  const connection = new Connection(rpcUrl, 'confirmed');
   const payer = await loadPayer();
 
   const artifactCandidates = [
@@ -290,14 +314,14 @@ async function main() {
   const loaded = await FiveSDK.loadFiveFile(artifactText);
   const deploy = EXISTING_SCRIPT_ACCOUNT
     ? { scriptAccount: EXISTING_SCRIPT_ACCOUNT, signature: null, deploymentCost: 0 }
-    : await deployScript(connection, payer, loaded);
+    : await deployScript(connection, payer, loaded, fiveVmProgramId);
   const program = FiveProgram.fromABI(deploy.scriptAccount, loaded.abi, {
-    fiveVMProgramId: FIVE_VM_PROGRAM_ID,
+    fiveVMProgramId: fiveVmProgramId,
   });
 
   const setup: StepResult[] = [];
   const report: StepResult[] = [];
-  const vmProgramPk = new PublicKey(FIVE_VM_PROGRAM_ID);
+  const vmProgramPk = new PublicKey(fiveVmProgramId);
 
   const depositAmount = 1_000_000n;
   const receiveAmount = 1_500_000n;
@@ -475,11 +499,11 @@ async function main() {
 
   report.push(await expectFailure(async () => sendIx(connection, payer, refundIx, [maker2, escrow2], 'refund:double_settlement_fails')));
 
-  console.log(`--- 5ive-escrow ${NETWORK} report ---`);
+  console.log(`--- 5ive-escrow ${NORMALIZED_NETWORK} report ---`);
   console.log('artifact:', artifactPath);
-  console.log('network:', NETWORK);
-  console.log('rpc:', RPC_URL);
-  console.log('five_vm_program_id:', FIVE_VM_PROGRAM_ID);
+  console.log('network:', NORMALIZED_NETWORK);
+  console.log('rpc:', rpcUrl);
+  console.log('five_vm_program_id:', fiveVmProgramId);
   console.log('script_account:', deploy.scriptAccount);
   console.log('deploy_signature:', deploy.signature);
   console.log('deployment_cost_lamports:', deploy.deploymentCost);

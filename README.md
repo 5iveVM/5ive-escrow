@@ -45,9 +45,11 @@ node ../five-cli/dist/index.js test --verbose
 node ../five-cli/dist/index.js test --format json
 
 # Run on-chain tests (local/devnet/mainnet)
-node ../five-cli/dist/index.js test --on-chain --target local
-node ../five-cli/dist/index.js test --on-chain --target devnet
-node ../five-cli/dist/index.js test --on-chain --target mainnet --allow-mainnet-tests --max-cost-sol 0.5
+npm run test:onchain:local
+npm run test:onchain:devnet
+npm run test:onchain:mainnet:preflight
+# Live mainnet transactions (explicit opt-in)
+ALLOW_MAINNET_TESTS=1 npm run test:onchain:mainnet
 ```
 
 #### Writing Tests
