@@ -158,6 +158,7 @@ Recommended unit standards:
 11. For raw-byte CPI payloads, use fixed `[u8; N]` literals or deterministic byte buffers and let the compiler lower them through the bytes path.
 12. Mark callee authority slots with `@authority` on interface account params.
 13. Declare caller PDA authorities once with `account @pda(seeds=[...])`; interface calls should then select signed CPI automatically with no signer-seed arrays at the call site.
+14. Runtime signer derivation for signed CPI and PDA init is script-scoped: VM prepends `active_script_key` to user-authored seeds (`effective_seeds = [active_script_key] + user_seeds (+ bump)`).
 
 ## 5.1) Anchor-to-5IVE Porting Map
 
