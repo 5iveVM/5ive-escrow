@@ -1,7 +1,7 @@
 {
   "network": "devnet",
   "rpcUrl": "https://api.devnet.solana.com",
-  "fiveProgramId": "5ive5uKDkc3Yhyfu1Sk7i3eVPDQUmG2GmTm2FnUZiTJd",
+  "fiveProgramId": "5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h",
   "vmStatePda": "<SET_AFTER_VM_INIT>",
   "escrowScriptAccount": "<SET_AFTER_ESCROW_DEPLOY>",
   "updatedAt": "2026-03-07T00:00:00Z"
