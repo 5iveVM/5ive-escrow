@@ -13,9 +13,9 @@ const RPC_BY_NETWORK = {
     mainnet: 'https://api.mainnet-beta.solana.com',
 };
 const PROGRAM_BY_NETWORK = {
-    localnet: '5ive5uKDkc3Yhyfu1Sk7i3eVPDQUmG2GmTm2FnUZiTJd',
-    devnet: '5ive5uKDkc3Yhyfu1Sk7i3eVPDQUmG2GmTm2FnUZiTJd',
-    mainnet: '5ive5uKDkc3Yhyfu1Sk7i3eVPDQUmG2GmTm2FnUZiTJd',
+    localnet: '5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h',
+    devnet: '5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h',
+    mainnet: '5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h',
 };
 const EXISTING_SCRIPT_ACCOUNT = process.env.FIVE_SCRIPT_ACCOUNT || '';
 const CONFIRM = {
