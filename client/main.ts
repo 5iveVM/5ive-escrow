@@ -39,9 +39,9 @@ const RPC_BY_NETWORK: Record<string, string> = {
   mainnet: 'https://api.mainnet-beta.solana.com',
 };
 const PROGRAM_BY_NETWORK: Record<string, string> = {
-  localnet: '5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h',
-  devnet: '5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h',
-  mainnet: '5ive5hbC3aRsvq37MP5m4sHtTSFxT4Cq1smS4ddyWJ6h',
+  localnet: '55555SyrYLzydvDMBhAL8uo6h4WETHTm81z8btf6nAVJ',
+  devnet: '55555SyrYLzydvDMBhAL8uo6h4WETHTm81z8btf6nAVJ',
+  mainnet: '55555SyrYLzydvDMBhAL8uo6h4WETHTm81z8btf6nAVJ',
 };
 const EXISTING_SCRIPT_ACCOUNT = process.env.FIVE_SCRIPT_ACCOUNT || '';
 const CONFIRM: ConfirmOptions = {
