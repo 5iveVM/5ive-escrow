@@ -27,3 +27,10 @@ Thumbs.db
 # 5IVE VM
 .five/cache/
 *.debug.bin
+.five/
+target/
+dist/
+.env.*.local
+CLAUDE.md
+GEMINI.md
+AGENTS.md
